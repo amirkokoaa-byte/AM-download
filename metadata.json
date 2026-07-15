@@ -1,0 +1,6 @@
+{
+  "name": "Universal Video Downloader",
+  "description": "A web application to download videos from YouTube, TikTok, Instagram, Facebook, and X.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
