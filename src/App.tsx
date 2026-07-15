@@ -44,18 +44,18 @@ export default function App() {
     }
   };
 
-  const handleDownload = async (qualityId: string) => {
+  const handleDownload = async () => {
     setIsDownloading(true);
     setDownloadProgress(0);
     setError(null);
     
     try {
-      const quality = videoDetails?.qualities.find(q => q.id === qualityId);
-      if (!quality || !quality.directUrl) {
+      if (!videoDetails || !videoDetails.direct_url) {
         throw new Error('لم يتم العثور على رابط التحميل المباشر.');
       }
       
-      const proxyUrl = `/api/download-proxy?url=${encodeURIComponent(quality.directUrl)}&title=${encodeURIComponent(videoDetails?.title || 'video')}&format=${encodeURIComponent(quality.format)}`;
+      const format = videoDetails.platform === 'tiktok' ? 'mp4' : 'mp4';
+      const proxyUrl = `/api/download-proxy?url=${encodeURIComponent(videoDetails.direct_url)}&title=${encodeURIComponent(videoDetails.title || 'video')}&format=${format}`;
       
       const response = await fetch(proxyUrl);
       if (!response.ok) {
@@ -91,13 +91,13 @@ export default function App() {
       setDownloadProgress(100);
       
       // Create blob and force download
-      const blob = new Blob(chunks, { type: quality.format === 'mp3' ? 'audio/mpeg' : 'video/mp4' });
+      const blob = new Blob(chunks, { type: 'video/mp4' });
       const downloadUrl = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = downloadUrl;
       
       // Extract filename from Content-Disposition if available
-      let filename = `${videoDetails?.title?.replace(/[^a-zA-Z0-9\u0600-\u06FF\s_-]/g, '').trim() || 'video'}.${quality.format}`;
+      let filename = `${videoDetails.title.replace(/[^a-zA-Z0-9\u0600-\u06FF\s_-]/g, '').trim() || 'video'}.${format}`;
       const contentDisposition = response.headers.get('content-disposition');
       if (contentDisposition && contentDisposition.includes('filename=')) {
         const match = contentDisposition.match(/filename="?([^"]+)"?/);

@@ -17,115 +17,57 @@ async function startServer() {
 
     const platform = determinePlatform(url);
 
-    if (platform === 'tiktok') {
-      try {
+    try {
+      if (platform === 'tiktok') {
         const tikwmResponse = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`);
         const tikwmData = await tikwmResponse.json();
 
         if (tikwmData.code === 0 && tikwmData.data) {
-          const videoDetails = {
-            url: url,
+          return res.json({
             title: tikwmData.data.title || 'فيديو تيك توك',
             thumbnail: tikwmData.data.cover || '',
-            platform: 'tiktok',
-            qualities: [
-              {
-                id: 'tiktok-nowatermark',
-                label: 'بدون علامة مائية',
-                format: 'mp4',
-                noWatermark: true,
-                directUrl: tikwmData.data.play
-              }
-            ]
-          };
-          
-          if (tikwmData.data.music) {
-            videoDetails.qualities.push({
-                id: 'tiktok-audio',
-                label: 'صوت (Audio)',
-                format: 'mp3',
-                noWatermark: true,
-                directUrl: tikwmData.data.music
-            });
-          }
-          
-          return res.json(videoDetails);
+            direct_url: tikwmData.data.play,
+            platform: 'tiktok'
+          });
         } else {
-            throw new Error(tikwmData.msg || 'فشل جلب بيانات تيك توك من API الخارجي');
+          throw new Error(tikwmData.msg || 'فشل جلب بيانات تيك توك من API الخارجي');
         }
-      } catch (tiktokError: any) {
-        console.error('TikTok Fetch Error:', tiktokError);
-        return res.status(500).json({ error: 'فشل في جلب بيانات تيك توك. يرجى المحاولة لاحقاً.' });
-      }
-    }
+      } else {
+        // Cobalt API for YouTube, Instagram, Facebook, X
+        const cobaltResponse = await fetch('https://co.wuk.sh/api/json', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify({
+            url: url,
+            vQuality: 'max',
+            filenamePattern: 'classic'
+          })
+        });
 
-    try {
-      // Use youtube-dl-exec to fetch metadata and direct URLs
-      const rawInfo = await youtubedl(url, {
-        dumpSingleJson: true,
-        noWarnings: true,
-        noCheckCertificates: true,
-        preferFreeFormats: true,
-        youtubeSkipDashManifest: true,
-      });
-      
-      const info = rawInfo as any;
-      
-      // Extract available formats and map them to our VideoQuality interface
-      const qualities = info.formats
-        ?.filter((f: any) => f.url && f.ext !== 'mhtml' && f.ext !== 'html')
-        ?.map((f: any) => {
-          const isAudioOnly = f.vcodec === 'none' && f.acodec !== 'none';
-          const formatStr = isAudioOnly ? 'mp3' : 'mp4';
-          const label = isAudioOnly ? 'صوت (Audio)' : (f.format_note || f.resolution || 'غير معروف');
-          return {
-            id: f.format_id || Math.random().toString(36).substring(7),
-            label: label,
-            format: formatStr,
-            resolution: f.resolution,
-            // For platforms like Instagram, youtube-dl-exec often gets the raw media URL
-            noWatermark: platform === 'instagram',
-            directUrl: f.url
-          };
-        }) || [];
-
-      // Sort qualities (best resolution first, then audio)
-      const sortedQualities = qualities.sort((a: any, b: any) => {
-        if (a.format === 'mp3' && b.format !== 'mp3') return 1;
-        if (a.format !== 'mp3' && b.format === 'mp3') return -1;
-        const resA = parseInt(a.resolution?.split('x')[1] || '0');
-        const resB = parseInt(b.resolution?.split('x')[1] || '0');
-        return resB - resA;
-      });
-
-      // Filter out duplicate labels to keep UI clean
-      const uniqueQualities: any[] = [];
-      const seenLabels = new Set();
-      for (const q of sortedQualities) {
-        const key = `${q.format}-${q.resolution || q.label}`;
-        if (!seenLabels.has(key)) {
-          seenLabels.add(key);
-          uniqueQualities.push(q);
+        if (!cobaltResponse.ok) {
+           throw new Error(`Cobalt API Error: ${cobaltResponse.status}`);
         }
+
+        const cobaltData = await cobaltResponse.json();
+
+        if (cobaltData.status === 'error') {
+           throw new Error(cobaltData.text || 'فشل جلب بيانات الفيديو من Cobalt API');
+        }
+
+        const directUrl = cobaltData.url;
+        
+        return res.json({
+          title: 'فيديو جاهز للتحميل', // Cobalt API /api/json typically doesn't return title natively
+          thumbnail: '',
+          direct_url: directUrl,
+          platform: platform
+        });
       }
-
-      const videoDetails = {
-        url: url,
-        title: info.title || 'فيديو غير معروف',
-        thumbnail: info.thumbnail || '',
-        platform: platform,
-        qualities: uniqueQualities.length > 0 ? uniqueQualities : [{
-          id: 'default',
-          label: 'جودة تلقائية',
-          format: 'mp4',
-          noWatermark: platform === 'instagram',
-          directUrl: info.url
-        }]
-      };
-
-      res.json(videoDetails);
     } catch (error: any) {
-      console.error('Download error (yt-dlp):', error);
+      console.error(`Fetch Error for ${platform}:`, error);
       res.status(500).json({ error: 'فشل في جلب بيانات الفيديو. يرجى التأكد من صحة الرابط أو المحاولة لاحقاً.' });
     }
   });

@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { Search, Loader2, Download, CheckCircle, AlertCircle } from 'lucide-react';
-import { VideoDetails, VideoQuality } from '../types';
+import { VideoDetails } from '../types';
 
 interface DownloaderFormProps {
   onCheckLink: (url: string) => void;
   isLoading: boolean;
   error?: string | null;
   videoDetails?: VideoDetails | null;
-  onDownload: (qualityId: string) => void;
+  onDownload: () => void;
   isDownloading: boolean;
   downloadProgress: number;
 }
@@ -22,7 +22,6 @@ export default function DownloaderForm({
   downloadProgress,
 }: DownloaderFormProps) {
   const [url, setUrl] = useState('');
-  const [selectedQuality, setSelectedQuality] = useState<string>('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,9 +31,7 @@ export default function DownloaderForm({
   };
 
   const handleDownloadClick = () => {
-    if (selectedQuality) {
-      onDownload(selectedQuality);
-    }
+    onDownload();
   };
 
   return (
@@ -102,24 +99,10 @@ export default function DownloaderForm({
               </div>
 
               <div className="mt-4 flex flex-col gap-3">
-                <select
-                  value={selectedQuality}
-                  onChange={(e) => setSelectedQuality(e.target.value)}
-                  className="w-full p-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none cursor-pointer"
-                  disabled={isDownloading}
-                >
-                  <option value="" disabled>اختر الجودة...</option>
-                  {videoDetails.qualities.map((quality) => (
-                    <option key={quality.id} value={quality.id}>
-                      {quality.label} {quality.resolution ? `- ${quality.resolution}` : ''} {quality.noWatermark ? '(بدون علامة مائية)' : ''}
-                    </option>
-                  ))}
-                </select>
-
                 <div className="relative">
                   <button
                     onClick={handleDownloadClick}
-                    disabled={!selectedQuality || isDownloading}
+                    disabled={isDownloading}
                     className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden z-10"
                   >
                     {isDownloading ? (
