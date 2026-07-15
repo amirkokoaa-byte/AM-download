@@ -30,6 +30,13 @@ export default function App() {
         body: JSON.stringify({ url })
       });
       
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        console.error('Non-JSON response received:', text);
+        throw new Error('حدث خطأ في السيرفر، يرجى المحاولة لاحقاً.');
+      }
+
       const data = await response.json();
       
       if (!response.ok) {
@@ -59,7 +66,15 @@ export default function App() {
       
       const response = await fetch(proxyUrl);
       if (!response.ok) {
-        throw new Error('حدث خطأ أثناء محاولة جلب الملف من الخادم.');
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            const errData = await response.json();
+            throw new Error(errData.error || 'حدث خطأ أثناء محاولة جلب الملف من الخادم.');
+        } else {
+            const text = await response.text();
+            console.error('Proxy Error (Non-JSON):', text);
+            throw new Error('حدث خطأ في السيرفر أثناء التحميل، يرجى المحاولة لاحقاً.');
+        }
       }
 
       const contentLength = response.headers.get('content-length');

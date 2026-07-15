@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import youtubedl from 'youtube-dl-exec';
+import ytdl from '@distube/ytdl-core';
 
 async function startServer() {
   const app = express();
@@ -10,14 +10,14 @@ async function startServer() {
   app.use(express.json());
 
   app.post('/api/fetch-video', async (req, res) => {
-    const { url } = req.body;
-    if (!url) {
-      return res.status(400).json({ error: 'الرابط مطلوب' });
-    }
-
-    const platform = determinePlatform(url);
-
     try {
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: 'الرابط مطلوب' });
+      }
+
+      const platform = determinePlatform(url);
+
       if (platform === 'tiktok') {
         const tikwmResponse = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}`);
         const tikwmData = await tikwmResponse.json();
@@ -32,45 +32,79 @@ async function startServer() {
         } else {
           throw new Error(tikwmData.msg || 'فشل جلب بيانات تيك توك من API الخارجي');
         }
+      } else if (platform === 'youtube') {
+        try {
+          const info = await ytdl.getInfo(url);
+          
+          let format = ytdl.chooseFormat(info.formats, { filter: 'audioandvideo', quality: 'highest' });
+          
+          if (!format || !format.url) {
+             format = ytdl.chooseFormat(info.formats, { quality: 'highest' });
+          }
+
+          if (!format || !format.url) {
+            throw new Error('لم يتم العثور على رابط التحميل المباشر من يوتيوب.');
+          }
+
+          return res.json({
+            title: info.videoDetails.title || 'فيديو يوتيوب',
+            thumbnail: info.videoDetails.thumbnails?.[0]?.url || '',
+            direct_url: format.url,
+            platform: 'youtube'
+          });
+        } catch (error: any) {
+          console.warn('ytdl-core failed, falling back to RapidAPI:', error.message);
+          return await fetchFromRapidAPI(url, res, platform);
+        }
       } else {
-        // Cobalt API for YouTube, Instagram, Facebook, X
-        const cobaltResponse = await fetch('https://co.wuk.sh/api/json', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify({
-            url: url,
-            vQuality: 'max',
-            filenamePattern: 'classic'
-          })
-        });
-
-        if (!cobaltResponse.ok) {
-           throw new Error(`Cobalt API Error: ${cobaltResponse.status}`);
-        }
-
-        const cobaltData = await cobaltResponse.json();
-
-        if (cobaltData.status === 'error') {
-           throw new Error(cobaltData.text || 'فشل جلب بيانات الفيديو من Cobalt API');
-        }
-
-        const directUrl = cobaltData.url;
-        
-        return res.json({
-          title: 'فيديو جاهز للتحميل', // Cobalt API /api/json typically doesn't return title natively
-          thumbnail: '',
-          direct_url: directUrl,
-          platform: platform
-        });
+        // Instagram, Facebook, X using RapidAPI
+        return await fetchFromRapidAPI(url, res, platform);
       }
     } catch (error: any) {
-      console.error(`Fetch Error for ${platform}:`, error);
-      res.status(500).json({ error: 'فشل في جلب بيانات الفيديو. يرجى التأكد من صحة الرابط أو المحاولة لاحقاً.' });
+      console.error('Fetch Error:', error);
+      res.status(500).json({ error: error.message || 'فشل في جلب بيانات الفيديو. يرجى التأكد من صحة الرابط أو المحاولة لاحقاً.' });
     }
   });
+
+  async function fetchFromRapidAPI(url: string, res: any, platform: string) {
+    const apiKey = process.env.RAPIDAPI_KEY;
+    if (!apiKey) {
+      throw new Error(`تعذر استخدام ytdl-core (مطلوب تسجيل الدخول لتخطي الحماية). يرجى إضافة مفتاح RAPIDAPI_KEY في إعدادات البيئة لاستخدام الخدمة البديلة لـ ${platform}.`);
+    }
+
+    // Example using a generic "Social Media Video Downloader" RapidAPI endpoint
+    const rapidApiHost = 'social-media-video-downloader.p.rapidapi.com';
+    const rapidApiUrl = `https://${rapidApiHost}/smvd/get/all?url=${encodeURIComponent(url)}`;
+    
+    const rapidResponse = await fetch(rapidApiUrl, {
+      method: 'GET',
+      headers: {
+        'x-rapidapi-key': apiKey,
+        'x-rapidapi-host': rapidApiHost
+      }
+    });
+
+    if (!rapidResponse.ok) {
+       const errText = await rapidResponse.text();
+       throw new Error(`RapidAPI Error: ${rapidResponse.status} - ${errText}`);
+    }
+
+    const data = await rapidResponse.json();
+    
+    // Handling generic RapidAPI response structures
+    const directUrl = data.links?.[0]?.link || data.video_url || data.url || data.src || (data.data && data.data.videoUrl);
+    
+    if (!directUrl) {
+      throw new Error('لم يتم العثور على رابط التحميل المباشر من RapidAPI.');
+    }
+
+    return res.json({
+      title: data.title || 'فيديو جاهز للتحميل',
+      thumbnail: data.picture || data.thumbnail || data.cover || '',
+      direct_url: directUrl,
+      platform: platform
+    });
+  }
 
   function determinePlatform(url: string): string {
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
